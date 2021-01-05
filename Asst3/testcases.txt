@@ -1,0 +1,167 @@
+testcases.txt
+Timur Misirpashayev
+
+Preliminary Notes: I have implemented the extra credit for this assignment. Whenever my server accept()s a new connection, it spawns a child process to handle the client. Furthermore, a random setup and punchline will be chosen from a joke list (jokelist.txt) that has to be read in from argv[2]. I have placed jokelist.txt in the same directory as the Asst3.c code and Makefile, but it can be anywhere as long as you enter the correct file path in the terminal. If the file path to jokelist.txt isn't specified, the server will print an error message to stdout.
+
+If you run the server with valgrind, you will see that all of the memory used by child (client) processes is free()d. However, the parent process cannot free() the joke list char ** array, since it always has to be ready to accept() new connections and select random jokes from the array. So if you close the main server process with Control+C and valgrind says that there is still allocated memory, this is OK. In fact, you will find that the number of blocks still reachable is precisely number_of_setup_lines + number_of_punchlines + 1, because each line is a single malloc()d char pointer and a malloc()d char ** array holds all of the char pointers.
+
+Formatting errors take precedence over length errors, and length errors take precedence over content errors. A regular message has to be in the format "REG|x||" (with exactly 3 pipes and some non-negative integer in between the first 2 pipes); anything else will be interpreted as a formatting error. 
+
+All of the output below is from the server.
+-----------------------------------------------------------------------------
+1. Here is an example of a complete KKJ without errors:
+
+./KKJserver 5556 jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|12|Who's there?|" from CLIENT.
+SERVER wrote message 2 "REG|9|Cow says.|" to CLIENT.
+SERVER read message 3 "REG|14|Cow says, who?|" from CLIENT.
+SERVER wrote message 4 "REG|19|No, a cow says moo!|" to CLIENT.
+SERVER read message 5 "REG|6|argh!!|" from CLIENT.
+-----------------------------------------------------------------------------
+2. Here is another example of a complete KKJ, but with a different joke from jokelist.txt:
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|12|Who's there?|" from CLIENT.
+SERVER wrote message 2 "REG|5|Snow.|" to CLIENT.
+SERVER read message 3 "REG|10|Snow, who?|" from CLIENT.
+SERVER wrote message 4 "REG|27|Snow use. The joke is over.|" to CLIENT.
+SERVER read message 5 "REG|6|argh!!|" from CLIENT.
+-----------------------------------------------------------------------------
+3. Message 1 from the client is in improper format. The client wrote the message "RE|12|Who's there?|". (Note that the server stopped reading as soon as the message format was broken.)
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "RE|" from CLIENT.
+ERROR M1FT: Message 1 format was broken.
+-----------------------------------------------------------------------------
+4. Message 1 from the client has an invalid length argument. I decided to consider this a formatting error, since there must be a non-negative integer in the length field in order to have a valid message. In this example, the client wrote the message "REG|-34|Who's there?|". (Once again, the server stops reading as soon as it detects something wrong.)
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|-" from CLIENT.
+ERROR M1FT: Message 1 format was broken.
+-----------------------------------------------------------------------------
+5. Message 1 from the client has incorrect content. (The last character of the message should be a '?', not a '.'.)
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|12|Who's there.|" from CLIENT.
+ERROR M1CT: Message 1 content was not correct.
+-----------------------------------------------------------------------------
+6. Server receives gibberish from the client. (The client sent "9438rmcp98qwufmcoqw".)
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "9" from CLIENT.
+ERROR M1FT: Message 1 format was broken.
+-----------------------------------------------------------------------------
+7. Message 3 from the client has incorrect content. Note that "REG|10|Snow, who?|" is a properly formatted message, and the length value (10) matches the number of bytes in "Snow, who?". So in this case, we get a content error.
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|12|Who's there?|" from CLIENT.
+SERVER wrote message 2 "REG|6|Nobel.|" to CLIENT.
+SERVER read message 3 "REG|10|Snow, who?|" from CLIENT.
+ERROR M3LN: Message 3 content was not correct.
+-----------------------------------------------------------------------------
+8. Message 3 from the client has incorrect content.
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|12|Who's there?|" from CLIENT.
+SERVER wrote message 2 "REG|5|Luke.|" to CLIENT.
+SERVER read message 3 "REG|10|Snow, who?|" from CLIENT.
+ERROR M3CT: Message 3 content was not correct.
+-----------------------------------------------------------------------------
+9. Message 5 content does not end in punctuation.
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|12|Who's there?|" from CLIENT.
+SERVER wrote message 2 "REG|5|Snow.|" to CLIENT.
+SERVER read message 3 "REG|10|Snow, who?|" from CLIENT.
+SERVER wrote message 4 "REG|27|Snow use. The joke is over.|" to CLIENT.
+SERVER read message 5 "REG|4|argh|" from CLIENT.
+ERROR M5CT: Message 5 content was not correct.
+-----------------------------------------------------------------------------
+10. Message 5 format broken. The client wrote the message "REG|88|argh" to the server. Note that since this message chunk could still be properly formatted, the server will wait for the remainder of the message.
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|12|Who's there?|" from CLIENT.
+SERVER wrote message 2 "REG|5|Snow.|" to CLIENT.
+SERVER read message 3 "REG|10|Snow, who?|" from CLIENT.
+SERVER wrote message 4 "REG|27|Snow use. The joke is over.|" to CLIENT.
+*SERVER waits*
+
+Once the connection is broken, the server analyzes whatever it received.
+
+SERVER read message 5 "REG|88|argh" from CLIENT.
+ERROR M5FT: Message 5 format was broken.
+-----------------------------------------------------------------------------
+11. Message 5 length incorrect.
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|12|Who's there?|" from CLIENT.
+SERVER wrote message 2 "REG|8|Lettuce.|" to CLIENT.
+SERVER read message 3 "REG|13|Lettuce, who?|" from CLIENT.
+SERVER wrote message 4 "REG|31|Lettuce in, it's cold out here!|" to CLIENT.
+SERVER read message 5 "REG|88|argh|" from CLIENT.
+ERROR M5LN: Message 5 length was not correct.
+-----------------------------------------------------------------------------
+12. Another complete KKJ
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|12|Who's there?|" from CLIENT.
+SERVER wrote message 2 "REG|5|Figs.|" to CLIENT.
+SERVER read message 3 "REG|10|Figs, who?|" from CLIENT.
+SERVER wrote message 4 "REG|36|Figs the doorbell, it's not working!|" to CLIENT.
+SERVER read message 5 "REG|4|Ugh.|" from CLIENT.
+-----------------------------------------------------------------------------
+13. Client sends message 1 one character at a time. (In a for loop.)
+
+char str [] = "REG|12|Who's there?|";
+int i;
+for (i = 0; i < strlen(str); i++)
+{
+  n+=write(sockfd, str+i, 1);
+  sleep(1);
+}
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|12|Who's there?|" from CLIENT.
+...
+-----------------------------------------------------------------------------
+14. File path to jokelist.txt isn't specified.
+
+./KKJserver 5556
+ERROR: Could not load jokelist.txt from argv[2].
+-----------------------------------------------------------------------------
+15. Client sends a formatting error to the server. (Since the server will always send the correct response, this can't happen, but the server should be able to respond anyway.)
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "ERR|M0FT|" from CLIENT.
+ERROR M0FT: Message 0 format was broken.
+-----------------------------------------------------------------------------
+16. Client sends the server an invalid error message. In this case, the error message is treated as an improperly formatted regular message.
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "ERR|M7" from CLIENT.
+ERROR M1FT: Message 1 format was broken.
+
+If the message were a proper error, the digit after the 'M' would be a 0, not a 7. So the server stops reading immediately.
+-----------------------------------------------------------------------------
+17. Message 1 is of incorrect length.
+
+./KKJserver 5556 ./jokelist.txt
+SERVER wrote message 0 "REG|13|Knock, knock.|" to CLIENT.
+SERVER read message 1 "REG|12|Who|" from CLIENT.
+ERROR M1LN: Message 1 length was not correct.
+-----------------------------------------------------------------------------
